@@ -180,6 +180,11 @@ const SOURCE_KEY   = 'sales_reps_availability';
 const THRESHOLD    = 1;          // days — matches the RevOps threshold alert
 const REFRESH_MS   = 60_000;
 const num = v => (v === null || v === undefined || v === '') ? null : Number(v);
+// Total within 48h ahead of today = today + tomorrow (null only if both missing)
+const within48 = r => {
+  const t = num(r.avail_today), m = num(r.avail_tomorrow);
+  return (t === null && m === null) ? null : (t || 0) + (m || 0);
+};
 
 // Parse the leading unit count so tiers sort by prospect size, not alphabetically
 function tierRank(seg){
@@ -245,13 +250,14 @@ async function fetchData(){
     const [latestRows, histRows] = await Promise.all([
       sqlQuery(
         `SELECT captured_at, run_period, name, segment, days_until_available,
-                avail_24h, avail_48h, next_available_at, slots_48h_after_first
+                avail_today, avail_tomorrow, avail_24h, avail_48h,
+                next_available_at, slots_48h_after_first
            FROM capacity.rep_daily
           WHERE source_key = $1
             AND captured_at = (SELECT max(captured_at) FROM capacity.rep_daily WHERE source_key = $1)
           ORDER BY segment`, [SOURCE_KEY]),
       sqlQuery(
-        `SELECT captured_at, segment, days_until_available, avail_24h, avail_48h
+        `SELECT captured_at, segment, days_until_available, avail_today, avail_tomorrow, avail_24h, avail_48h
            FROM capacity.rep_daily
           WHERE source_key = $1 AND captured_at >= now() - interval '14 days'
           ORDER BY captured_at`, [SOURCE_KEY])
@@ -283,7 +289,8 @@ function render(){
   const total   = rows.length;
   const today   = rows.filter(r=>num(r.days_until_available)===0).length;
   const breach  = rows.filter(r=>{ const d=num(r.days_until_available); return d===null || d>THRESHOLD; }).length;
-  const slots24 = rows.reduce((s,r)=>s+(num(r.avail_24h)||0),0);
+  const slotsToday = rows.reduce((s,r)=>s+(num(r.avail_today)||0),0);
+  const slotsW48   = rows.reduce((s,r)=>s+(within48(r)||0),0);
   const soonest = rows.map(r=>r.next_available_at).filter(Boolean).sort()[0] || null;
 
   const kpis = `
@@ -299,9 +306,9 @@ function render(){
         <div class="sub">earliest across all tiers</div>
       </div>
       <div class="kpi">
-        <div class="label">Open slots · next 24h</div>
-        <div class="value">${slots24}</div>
-        <div class="sub">summed across ${total} tiers</div>
+        <div class="label">Slots within 48h</div>
+        <div class="value">${slotsW48}</div>
+        <div class="sub">${slotsToday} today · summed across ${total} tiers</div>
       </div>
       <div class="kpi ${breach>0?'alert':'ok'}">
         <div class="label">Over SLA</div>
@@ -314,7 +321,7 @@ function render(){
   const cards = rows.map(r=>{
     const d = num(r.days_until_available);
     const hs = health(d);
-    const runs = (byTierRuns[r.segment]||[]).map(x=>num(x.avail_24h));
+    const runs = (byTierRuns[r.segment]||[]).map(x=>num(x.avail_today));
     return `
       <div class="card ${hs.k}">
         <div class="card-top">
@@ -323,9 +330,9 @@ function render(){
         </div>
         <div class="next-line">Next slot: <strong>${relNext(r.next_available_at)}</strong></div>
         <div class="metrics">
-          <div class="metric"><div class="m-val">${num(r.avail_24h) ?? '—'}</div><div class="m-lab">Next 24h</div></div>
-          <div class="metric"><div class="m-val">${num(r.avail_48h) ?? '—'}</div><div class="m-lab">Next 48h</div></div>
-          <div class="metric"><div class="m-val">${num(r.slots_48h_after_first) ?? '—'}</div><div class="m-lab">48h after 1st</div></div>
+          <div class="metric"><div class="m-val">${num(r.avail_today) ?? '—'}</div><div class="m-lab">Today</div></div>
+          <div class="metric"><div class="m-val">${num(r.avail_tomorrow) ?? '—'}</div><div class="m-lab">Tomorrow</div></div>
+          <div class="metric"><div class="m-val">${within48(r) ?? '—'}</div><div class="m-lab">Within 48h</div></div>
         </div>
         ${sparkline(runs)}
       </div>`;
@@ -337,9 +344,9 @@ function render(){
     return `<tr>
       <td><span class="dot ${hs.k}"></span>${tidyTier(r.segment)}</td>
       <td class="num">${d ?? '—'}</td>
-      <td class="num">${num(r.avail_24h) ?? '—'}</td>
-      <td class="num">${num(r.avail_48h) ?? '—'}</td>
-      <td class="num">${num(r.slots_48h_after_first) ?? '—'}</td>
+      <td class="num">${num(r.avail_today) ?? '—'}</td>
+      <td class="num">${num(r.avail_tomorrow) ?? '—'}</td>
+      <td class="num">${within48(r) ?? '—'}</td>
       <td style="text-align:right;color:var(--muted)">${etDateTime(r.next_available_at)}</td>
     </tr>`;
   }).join('');
@@ -356,8 +363,8 @@ function render(){
           <p>Total across all tiers, per run (last 14 days)</p>
         </div>
         <div class="toggle" id="metric-toggle">
-          <button data-m="avail_24h" class="active">Slots · 24h</button>
-          <button data-m="avail_48h">Slots · 48h</button>
+          <button data-m="avail_today" class="active">Slots today</button>
+          <button data-m="within48">Within 48h</button>
           <button data-m="days_until_available">Avg days to slot</button>
         </div>
       </div>
@@ -369,8 +376,8 @@ function render(){
       <div style="overflow-x:auto">
       <table>
         <thead><tr>
-          <th>Tier</th><th class="num">Days to slot</th><th class="num">Slots 24h</th>
-          <th class="num">Slots 48h</th><th class="num">48h after 1st</th><th style="text-align:right">Next available (ET)</th>
+          <th>Tier</th><th class="num">Days to slot</th><th class="num">Today</th>
+          <th class="num">Tomorrow</th><th class="num">Within 48h</th><th style="text-align:right">Next available (ET)</th>
         </tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
@@ -401,13 +408,14 @@ function drawTrend(){
 
   const labels = stamps.map(s=>new Date(s).toLocaleString('en-US',{timeZone:'America/New_York',month:'numeric',day:'numeric',hour:'numeric',hour12:true}));
   const isAvg = trendMetric === 'days_until_available';
+  const getVal = r => trendMetric === 'within48' ? within48(r) : num(r[trendMetric]);
   const data = stamps.map(s=>{
-    const vals = runs[s].map(r=>num(r[trendMetric])).filter(v=>v!==null);
+    const vals = runs[s].map(getVal).filter(v=>v!==null);
     if(!vals.length) return null;
     return isAvg ? +(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2) : vals.reduce((a,b)=>a+b,0);
   });
-  const title = trendMetric==='avail_24h' ? 'Open slots · next 24h'
-              : trendMetric==='avail_48h' ? 'Open slots · next 48h'
+  const title = trendMetric==='avail_today' ? 'Open slots · today'
+              : trendMetric==='within48'    ? 'Open slots · within 48h'
               : 'Avg days to next slot';
 
   if(trendChart) trendChart.destroy();
