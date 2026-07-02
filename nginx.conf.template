@@ -5,6 +5,15 @@ server {
   root /usr/share/nginx/html;
   index index.html;
 
+  # Health endpoint for the platform's readiness/liveness probe.
+  # deploybay didn't detect this image as a "known static server", so it may
+  # probe a health path rather than /. Answer 200 on the common ones.
+  location ~ ^/(healthz|health|ready|livez)$ {
+    access_log off;
+    add_header Content-Type text/plain;
+    return 200 "ok\n";
+  }
+
   # Static dashboard
   location / {
     try_files $uri $uri/ =404;
