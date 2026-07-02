@@ -306,9 +306,9 @@ function render(){
         <div class="sub">earliest across all tiers</div>
       </div>
       <div class="kpi">
-        <div class="label">Slots within 48h</div>
+        <div class="label">Slots within 48h (Total)</div>
         <div class="value">${slotsW48}</div>
-        <div class="sub">${slotsToday} today · summed across ${total} tiers</div>
+        <div class="sub">${slotsToday} today + ${slotsW48 - slotsToday} tomorrow</div>
       </div>
       <div class="kpi ${breach>0?'alert':'ok'}">
         <div class="label">Over SLA</div>
@@ -332,7 +332,7 @@ function render(){
         <div class="metrics">
           <div class="metric"><div class="m-val">${num(r.avail_today) ?? '—'}</div><div class="m-lab">Today</div></div>
           <div class="metric"><div class="m-val">${num(r.avail_tomorrow) ?? '—'}</div><div class="m-lab">Tomorrow</div></div>
-          <div class="metric"><div class="m-val">${within48(r) ?? '—'}</div><div class="m-lab">Within 48h</div></div>
+          <div class="metric"><div class="m-val">${within48(r) ?? '—'}</div><div class="m-lab">Within 48h (Total)</div></div>
         </div>
         ${sparkline(runs)}
       </div>`;
@@ -377,7 +377,7 @@ function render(){
       <table>
         <thead><tr>
           <th>Tier</th><th class="num">Days to slot</th><th class="num">Today</th>
-          <th class="num">Tomorrow</th><th class="num">Within 48h</th><th style="text-align:right">Next available (ET)</th>
+          <th class="num">Tomorrow</th><th class="num">Within 48h (Total)</th><th style="text-align:right">Next available (ET)</th>
         </tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
