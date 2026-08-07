@@ -26,9 +26,22 @@ server {
     if ($request_method != POST) {
       return 405;
     }
+
+    # Resolve the gateway hostname per request, not once at startup. A literal
+    # hostname in proxy_pass is resolved when the config loads and the IP is
+    # cached for the life of the pod; when AWS rotated the execute-api IPs on
+    # 2026-08-07, every /api/sql timed out as 503 on both trackers until the
+    # pods were restarted. A variable target forces nginx to re-resolve through
+    # `resolver` every `valid=` interval. NGINX_LOCAL_RESOLVERS carries the
+    # pod's /etc/resolv.conf nameservers, exported by the stock image
+    # entrypoint when NGINX_ENTRYPOINT_LOCAL_RESOLVERS is set (see Dockerfile).
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=300s ipv6=off;
+    resolver_timeout 5s;
+    set $sql_gateway 1r7hjb5jv6.execute-api.us-east-1.amazonaws.com;
+
     proxy_method POST;
-    proxy_pass https://1r7hjb5jv6.execute-api.us-east-1.amazonaws.com/prod/db/agent_platform/sql;
-    proxy_set_header Host              1r7hjb5jv6.execute-api.us-east-1.amazonaws.com;
+    proxy_pass https://$sql_gateway/prod/db/agent_platform/sql;
+    proxy_set_header Host              $sql_gateway;
     proxy_set_header X-Identity        "${SQL_IDENTITY}";
     proxy_set_header X-Internal-Secret "${SQL_SECRET}";
     proxy_set_header Content-Type      "application/json";
