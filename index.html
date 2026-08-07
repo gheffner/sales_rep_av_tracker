@@ -62,6 +62,12 @@
   .run-meta { text-align:right; font-size:.8rem; color:var(--muted); }
   .run-meta strong { color:var(--text); font-weight:600; }
 
+  /* ── Breadcrumb (drill-down) ── */
+  .crumbs { display:flex; align-items:center; gap:7px; font-size:.82rem; color:var(--muted); margin-bottom:14px; flex-wrap:wrap; }
+  .crumbs a { color:var(--data); text-decoration:none; font-weight:600; }
+  .crumbs a:hover { text-decoration:underline; }
+  .crumbs .sep { color:var(--dim); }
+
   /* ── KPI tiles ── */
   .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:26px; }
   .kpi { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px 18px; }
@@ -72,20 +78,26 @@
   .kpi.ok .value { color:var(--good); }
 
   /* ── Section ── */
-  .section-title { font-size:1.05rem; font-weight:700; margin:6px 0 14px; display:flex; align-items:center; gap:8px; }
+  .section-title { font-size:1.05rem; font-weight:700; margin:6px 0 14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .section-title .count { font-size:.78rem; font-weight:500; color:var(--muted); }
 
-  /* ── Segment cards ── */
+  /* ── Cards ── */
   .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:14px; margin-bottom:30px; }
   .card {
     background:var(--card); border:1px solid var(--border); border-radius:14px;
     padding:16px 17px; position:relative; overflow:hidden;
-    border-left:4px solid var(--border); transition:box-shadow .15s;
+    border-left:4px solid var(--border); transition:box-shadow .15s, transform .15s;
   }
   .card:hover { box-shadow:0 4px 18px rgba(15,23,42,0.07); }
   .card.good     { border-left-color:var(--good); }
   .card.warning  { border-left-color:var(--warning); }
   .card.critical { border-left-color:var(--critical); }
+  .card.clickable { cursor:pointer; }
+  .card.clickable:hover { transform:translateY(-1px); }
+  .card.clickable::after {
+    content:'\203A'; position:absolute; right:14px; bottom:10px;
+    font-size:1.4rem; line-height:1; color:var(--dim);
+  }
   .card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
   .tier { font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:1.02rem; }
   .tier .tier-sub { display:block; font-family:'Inter',sans-serif; font-weight:400; font-size:.72rem; color:var(--dim); margin-top:2px; }
@@ -100,6 +112,7 @@
   .metric .m-lab { font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-top:1px; }
   .spark { margin-top:12px; height:34px; }
   .spark svg { width:100%; height:34px; display:block; }
+  .spark-lab { font-size:.65rem; color:var(--dim); margin-top:2px; }
 
   /* ── Chart panel ── */
   .panel { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px 22px; margin-bottom:26px; }
@@ -115,15 +128,24 @@
   .chartbox { position:relative; height:300px; margin-top:12px; }
 
   /* ── Table ── */
+  .scroll { overflow-x:auto; }
   table { width:100%; border-collapse:collapse; font-size:.85rem; }
   th, td { text-align:left; padding:11px 12px; border-bottom:1px solid var(--border); }
   th { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600; }
   td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
   tbody tr:hover { background:var(--bg); }
+  tbody tr.clickable { cursor:pointer; }
   .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px; vertical-align:middle; }
   .dot.good{background:var(--good);} .dot.warning{background:var(--warning);} .dot.critical{background:var(--critical);}
+  .rowlink { color:var(--data); font-weight:600; }
+  .band { font-size:.72rem; color:var(--muted); background:var(--bg); border:1px solid var(--border);
+          border-radius:20px; padding:3px 9px; white-space:nowrap; }
 
-  .state-msg { text-align:center; padding:60px 20px; color:var(--muted); font-size:.95rem; }
+  .note {
+    background:var(--bg); border:1px solid var(--border); border-left:3px solid var(--data);
+    border-radius:8px; padding:11px 14px; font-size:.8rem; color:var(--muted); margin-bottom:22px;
+  }
+  .state-msg { text-align:center; padding:60px 20px; color:var(--muted); font-size:.95rem; line-height:1.6; }
   footer { text-align:center; color:var(--dim); font-size:.76rem; margin-top:30px; }
   footer a { color:var(--muted); }
 
@@ -144,8 +166,8 @@
 <div class="wrap">
   <div class="page-head">
     <div>
-      <h1>Demo Round-Robin Availability</h1>
-      <p>Next-slot availability across DoorLoop sales demo calendars, by prospect size tier.</p>
+      <h1 id="page-title">Demo Availability</h1>
+      <p id="page-sub">Next-slot availability across the sales demo calendars, by unit tier and by rep.</p>
     </div>
     <div class="run-meta" id="run-meta">Loading…</div>
   </div>
@@ -155,8 +177,8 @@
   </div>
 
   <footer>
-    Source: <code>capacity.rep_daily</code> · <code>source_key = 'sales_reps_availability'</code> · refreshed every 60s ·
-    SLA threshold: next slot within <span id="thr">1</span> day
+    Source: <code>capacity.rep_daily</code> · <code>source_key = 'sales_reps_availability'</code> ·
+    refreshed every 60s · SLA threshold: next slot within <span id="thr">1</span> day
   </footer>
 </div>
 
@@ -176,36 +198,40 @@ async function sqlQuery(sql, params = []) {
   return json.rows || [];
 }
 
-const SOURCE_KEY   = 'sales_reps_availability';
-const THRESHOLD    = 1;          // days — matches the RevOps threshold alert
-const REFRESH_MS   = 60_000;
+const SOURCE_KEY  = 'sales_reps_availability';
+const THRESHOLD   = 1;           // days — unchanged from v1, and from the RevOps threshold alert
+const REFRESH_MS  = 60_000;
 const num = v => (v === null || v === undefined || v === '') ? null : Number(v);
-// Total within 48h ahead of today = today + tomorrow (null only if both missing)
+// Total inside 48h ahead of today = today + tomorrow (null only if both missing)
 const within48 = r => {
   const t = num(r.avail_today), m = num(r.avail_tomorrow);
   return (t === null && m === null) ? null : (t || 0) + (m || 0);
 };
 
-// Parse the leading unit count so tiers sort by prospect size, not alphabetically
-function tierRank(seg){
-  if(!seg) return 9e9;
-  const m = String(seg).match(/\d+/);
-  return m ? parseInt(m[0],10) : 9e9;
-}
-function tidyTier(seg){
-  if(!seg) return 'Unsegmented';
-  return String(seg).replace(/\bunits\b/i,'Units').trim();
-}
-
-// Health from days-until-next-slot vs threshold
-function health(days){
-  if(days === null) return {k:'critical', icon:'⛔', label:'No slots'};
-  if(days <= 0)      return {k:'good',     icon:'✅', label:'Today'};
-  if(days <= THRESHOLD) return {k:'warning', icon:'⚠️', label:'Tomorrow'};
-  return {k:'critical', icon:'⛔', label:`${days}d out`};
-}
-
 // ── time helpers (ET) ─────────────────────────────────────────────────────────
+const etFmt = new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'});
+function etDayNum(d){
+  const [y,m,dd] = etFmt.format(new Date(d)).split('-').map(Number);
+  return Date.UTC(y, m-1, dd) / 86400000;
+}
+// Whole ET calendar days from the run to the slot. 0 = today, 1 = tomorrow.
+// Derived here rather than read from the stored integer, which counts UTC days —
+// identical for the current 8am–6pm ET cron, but correct if that cron ever moves.
+function daysUntil(iso, refIso){
+  if(!iso) return null;
+  return etDayNum(iso) - etDayNum(refIso || Date.now());
+}
+// Hours from now to the slot. Informational alongside the day-based status: it is the
+// number a manager acts on between snapshots, and the page re-reads every 60s.
+function hoursUntil(iso){
+  if(!iso) return null;
+  return (new Date(iso) - new Date()) / 3600000;
+}
+function fmtHours(h){
+  if(h === null) return '—';
+  if(h < 0) return '0';
+  return h < 72 ? String(Math.round(h)) : `${(h/24).toFixed(1)}d`;
+}
 function etTime(iso){ return iso ? new Date(iso).toLocaleString('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit',hour12:true}) : '—'; }
 function etDateTime(iso){ return iso ? new Date(iso).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'; }
 function etDay(d){ return new Date(d).toLocaleDateString('en-US',{timeZone:'America/New_York'}); }
@@ -215,15 +241,37 @@ function relNext(iso){
   const mins = Math.round((t-now)/60000);
   if(mins < 0)  return 'Now';
   if(mins < 60) return `in ${mins} min`;
-  const sameDay = etDay(t) === etDay(now);
-  if(sameDay)   return `Today · ${etTime(iso)}`;
+  if(etDay(t) === etDay(now)) return `Today · ${etTime(iso)}`;
   const tmr = new Date(now); tmr.setDate(tmr.getDate()+1);
   if(etDay(t) === etDay(tmr)) return `Tomorrow · ${etTime(iso)}`;
   return etDateTime(iso);
 }
 
+// Health from days-until-next-slot vs the 1-day threshold. Same three states v1 drew:
+// a slot today is green, tomorrow is amber, later (or none in Calendly's 7-day
+// horizon) is red. Status is never colour-alone — every use pairs icon with label.
+function health(days){
+  if(days === null)     return {k:'critical', icon:'⛔', label:'No slots'};
+  if(days <= 0)         return {k:'good',     icon:'✅', label:'Today'};
+  if(days <= THRESHOLD) return {k:'warning',  icon:'⚠️', label:'Tomorrow'};
+  return {k:'critical', icon:'⛔', label:`${days}d out`};
+}
+
+// Unit tiers and AE bands both sort by their leading number, so "1-10 Units" and
+// "AE 1-20" rank ahead of "101-150". Unnumbered bands (SDR, Sales Manager) sort last.
+function tierRank(seg){
+  if(!seg) return 9e9;
+  const m = String(seg).match(/\d+/);
+  return m ? parseInt(m[0],10) : 9e9;
+}
+function tidyTier(seg){
+  if(!seg) return 'Unsegmented';
+  return String(seg).replace(/\bunits\b/i,'Units').trim();
+}
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 // ── sparkline (single-hue, inline SVG) ────────────────────────────────────────
-function sparkline(values){
+function sparkline(values, label){
   const v = values.filter(x=>x!==null);
   if(v.length < 2) return `<div class="spark" style="color:var(--dim);font-size:.72rem;display:flex;align-items:center">—</div>`;
   const w=220, h=34, pad=3, min=Math.min(...v), max=Math.max(...v), span=(max-min)||1;
@@ -236,131 +284,226 @@ function sparkline(values){
   return `<div class="spark"><svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
     <polyline points="${pts.join(' ')}" fill="none" stroke="var(--data)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     <circle cx="${last[0]}" cy="${last[1]}" r="2.8" fill="var(--data)"/>
-  </svg></div>`;
+  </svg></div>${label?`<div class="spark-lab">${esc(label)}</div>`:''}`;
 }
 
 // ── state ─────────────────────────────────────────────────────────────────────
-let latest = [];      // rows from the most recent run
-let history = [];      // last 14 days of runs
-let trendChart = null;
-let trendMetric = 'avail_24h';
+let tierLatest = [];   // type='RR' rows, most recent run
+let repLatest  = [];   // type='REP' rows, most recent run
+let tierHistory = [];   // type='RR', last 14 days
+let repHistCache = {};   // rep name -> 14d rows (fetched on drill-down)
+let chart = null;
+let trendMetric = 'avail_today';
+let capturedAt = null;
 
 async function fetchData(){
   try {
     const [latestRows, histRows] = await Promise.all([
       sqlQuery(
-        `SELECT captured_at, run_period, name, segment, days_until_available,
+        `SELECT captured_at, run_period, type, name, segment, days_until_available,
                 avail_today, avail_tomorrow, avail_24h, avail_48h,
                 next_available_at, slots_48h_after_first
            FROM capacity.rep_daily
           WHERE source_key = $1
-            AND captured_at = (SELECT max(captured_at) FROM capacity.rep_daily WHERE source_key = $1)
-          ORDER BY segment`, [SOURCE_KEY]),
+            AND captured_at = (SELECT max(captured_at) FROM capacity.rep_daily WHERE source_key = $1)`,
+        [SOURCE_KEY]),
       sqlQuery(
-        `SELECT captured_at, segment, days_until_available, avail_today, avail_tomorrow, avail_24h, avail_48h
+        `SELECT captured_at, segment, days_until_available, avail_today, avail_tomorrow,
+                avail_24h, avail_48h, next_available_at
            FROM capacity.rep_daily
-          WHERE source_key = $1 AND captured_at >= now() - interval '14 days'
-          ORDER BY captured_at`, [SOURCE_KEY])
+          WHERE source_key = $1 AND type = 'RR' AND captured_at >= now() - interval '14 days'
+          ORDER BY captured_at`,
+        [SOURCE_KEY])
     ]);
-    latest = latestRows; history = histRows;
+    // Rows written before the rep layer shipped carry type='RR' only, so history and
+    // the tier views are unaffected by the switchover.
+    tierLatest = latestRows.filter(r => r.type === 'RR');
+    repLatest  = latestRows.filter(r => r.type === 'REP');
+    tierHistory = histRows;
+    capturedAt = latestRows[0]?.captured_at || null;
   } catch(err){
     document.getElementById('content').innerHTML =
-      `<div class="state-msg">⚠️ Error loading data: ${err.message}</div>`;
+      `<div class="state-msg">⚠️ Error loading data: ${esc(err.message)}</div>`;
     return;
   }
-  render();
+  route();
 }
 
-function render(){
-  if(!latest.length){
-    document.getElementById('content').innerHTML =
-      `<div class="state-msg">No availability rows yet for <code>${SOURCE_KEY}</code>.<br>Data appears after the tracker's next run.</div>`;
+// ── derived views ─────────────────────────────────────────────────────────────
+function tiers(){
+  return [...tierLatest].sort((a,b)=>tierRank(a.segment)-tierRank(b.segment));
+}
+// Worst availability first — those are the rows a manager acts on.
+function reps(){
+  return [...repLatest].sort((a,b)=>{
+    const da = num(a.days_until_available), db = num(b.days_until_available);
+    const xa = da === null ? 9e9 : da, xb = db === null ? 9e9 : db;
+    return xb - xa || String(a.name).localeCompare(String(b.name));
+  });
+}
+// Per-band rollup. Unlike the onboarding tracker's specialists — where one person owns
+// twelve calendars drawing on one free/busy — each rep here has exactly ONE demo
+// calendar, so slot counts across reps are additive and a band total is real capacity.
+function bands(){
+  const out = {};
+  for(const r of repLatest){
+    const b = out[r.segment || 'Unsegmented'] ??= { segment:r.segment || 'Unsegmented', reps:0, today:0, w48:0, availToday:0, best:null };
+    b.reps += 1;
+    b.today += num(r.avail_today) || 0;
+    b.w48 += within48(r) || 0;
+    if(num(r.days_until_available) === 0) b.availToday += 1;
+    if(r.next_available_at && (!b.best || r.next_available_at < b.best)) b.best = r.next_available_at;
+  }
+  return Object.values(out).sort((a,b)=>tierRank(a.segment)-tierRank(b.segment));
+}
+// history keyed per tier (chronological runs) for sparklines
+function tierRuns(segment, metric){
+  return tierHistory.filter(r=>r.segment===segment).map(r=> metric==='within48' ? within48(r) : num(r[metric]));
+}
+
+// ── router ────────────────────────────────────────────────────────────────────
+function route(){
+  const h = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
+  const [view, ...rest] = h.split('/');
+  const key = rest.join('/');
+  if(view === 'tier' && key) return renderTier(key);
+  if(view === 'rep'  && key) return renderRep(key);
+  renderOverview();
+}
+window.addEventListener('hashchange', route);
+
+function setHead(title, sub){
+  document.getElementById('page-title').textContent = title;
+  document.getElementById('page-sub').textContent = sub;
+}
+
+// ── LEVEL 1 — overview ────────────────────────────────────────────────────────
+function renderOverview(){
+  if(!tierLatest.length && !repLatest.length){
+    document.getElementById('content').innerHTML = `<div class="state-msg">
+      No availability rows yet for <code>${SOURCE_KEY}</code>.<br>
+      Data appears after the tracker's next run.</div>`;
+    document.getElementById('run-meta').textContent = 'No runs yet';
     return;
   }
+  setHead('Demo Availability', 'Next-slot availability across the sales demo calendars, by unit tier and by rep.');
 
-  const rows = [...latest].sort((a,b)=>tierRank(a.segment)-tierRank(b.segment));
-  const capturedAt = latest[0].captured_at;
-
-  // history keyed per segment (chronological runs) for sparklines
-  const byTierRuns = {};
-  history.forEach(r=>{ (byTierRuns[r.segment] ??= []).push(r); });
-
-  // ── KPI numbers ──
-  const total   = rows.length;
-  const today   = rows.filter(r=>num(r.days_until_available)===0).length;
-  const breach  = rows.filter(r=>{ const d=num(r.days_until_available); return d===null || d>THRESHOLD; }).length;
-  const slotsToday = rows.reduce((s,r)=>s+(num(r.avail_today)||0),0);
-  const slotsW48   = rows.reduce((s,r)=>s+(within48(r)||0),0);
-  const soonest = rows.map(r=>r.next_available_at).filter(Boolean).sort()[0] || null;
+  const ts = tiers(), rs = reps();
+  const tiersToday = ts.filter(t=>daysUntil(t.next_available_at, capturedAt)===0).length;
+  const repsToday  = rs.filter(r=>daysUntil(r.next_available_at, capturedAt)===0).length;
+  const breach = ts.filter(t=>{ const d = daysUntil(t.next_available_at, capturedAt); return d===null || d>THRESHOLD; }).length;
+  const soonest = [...ts, ...rs].map(r=>r.next_available_at).filter(Boolean).sort()[0] || null;
+  const repSlotsToday = rs.reduce((s,r)=>s+(num(r.avail_today)||0),0);
 
   const kpis = `
     <div class="kpis">
-      <div class="kpi ${today===total?'ok':''}">
-        <div class="label">Available today</div>
-        <div class="value">${today}<span style="font-size:1rem;color:var(--dim);font-weight:600">/${total}</span></div>
-        <div class="sub">tiers with a same-day slot</div>
+      <div class="kpi ${ts.length && tiersToday===ts.length?'ok':''}">
+        <div class="label">Tiers available today</div>
+        <div class="value">${tiersToday}<span style="font-size:1rem;color:var(--dim);font-weight:600">/${ts.length}</span></div>
+        <div class="sub">demo round-robins with a same-day slot</div>
       </div>
       <div class="kpi">
         <div class="label">Soonest slot</div>
         <div class="value" style="font-size:1.35rem">${relNext(soonest)}</div>
-        <div class="sub">earliest across all tiers</div>
+        <div class="sub">earliest across every calendar</div>
       </div>
-      <div class="kpi">
-        <div class="label">Slots within 48h (Total)</div>
-        <div class="value">${slotsW48}</div>
-        <div class="sub">${slotsToday} today + ${slotsW48 - slotsToday} tomorrow</div>
+      <div class="kpi ${rs.length && repsToday===rs.length?'ok':''}">
+        <div class="label">Reps available today</div>
+        <div class="value">${repsToday}<span style="font-size:1rem;color:var(--dim);font-weight:600">/${rs.length}</span></div>
+        <div class="sub">${repSlotsToday} open rep slots today</div>
       </div>
       <div class="kpi ${breach>0?'alert':'ok'}">
         <div class="label">Over SLA</div>
         <div class="value">${breach}</div>
-        <div class="sub">tiers past ${THRESHOLD}-day threshold</div>
+        <div class="sub">tiers past the ${THRESHOLD}-day threshold</div>
       </div>
     </div>`;
 
-  // ── segment cards ──
-  const cards = rows.map(r=>{
-    const d = num(r.days_until_available);
-    const hs = health(d);
-    const runs = (byTierRuns[r.segment]||[]).map(x=>num(x.avail_today));
+  // ── round-robin tier cards ──
+  const tierCards = ts.map(t=>{
+    const d = daysUntil(t.next_available_at, capturedAt), hs = health(d);
     return `
-      <div class="card ${hs.k}">
+      <div class="card clickable ${hs.k}" onclick="location.hash='#/tier/${encodeURIComponent(t.segment)}'">
         <div class="card-top">
-          <div class="tier">${tidyTier(r.segment)}<span class="tier-sub">${r.name||''}</span></div>
+          <div class="tier">${esc(tidyTier(t.segment))}<span class="tier-sub">${esc(t.name || 'Round-robin')}</span></div>
           <span class="badge ${hs.k}">${hs.icon} ${hs.label}</span>
         </div>
-        <div class="next-line">Next slot: <strong>${relNext(r.next_available_at)}</strong></div>
+        <div class="next-line">Next slot: <strong>${relNext(t.next_available_at)}</strong></div>
         <div class="metrics">
-          <div class="metric"><div class="m-val">${num(r.avail_today) ?? '—'}</div><div class="m-lab">Today</div></div>
-          <div class="metric"><div class="m-val">${num(r.avail_tomorrow) ?? '—'}</div><div class="m-lab">Tomorrow</div></div>
-          <div class="metric"><div class="m-val">${within48(r) ?? '—'}</div><div class="m-lab">Within 48h (Total)</div></div>
+          <div class="metric"><div class="m-val">${num(t.avail_today) ?? '—'}</div><div class="m-lab">Today</div></div>
+          <div class="metric"><div class="m-val">${num(t.avail_tomorrow) ?? '—'}</div><div class="m-lab">Tomorrow</div></div>
+          <div class="metric"><div class="m-val">${within48(t) ?? '—'}</div><div class="m-lab">Within 48h</div></div>
         </div>
-        ${sparkline(runs)}
+        ${sparkline(tierRuns(t.segment,'avail_today'), 'open slots today · 14d')}
       </div>`;
   }).join('');
 
-  // ── table ──
-  const tableRows = rows.map(r=>{
-    const d=num(r.days_until_available), hs=health(d);
-    return `<tr>
-      <td><span class="dot ${hs.k}"></span>${tidyTier(r.segment)}</td>
-      <td class="num">${d ?? '—'}</td>
+  // ── rep table ──
+  const repRows = rs.map(r=>{
+    const d = daysUntil(r.next_available_at, capturedAt), hs = health(d);
+    return `<tr class="clickable" onclick="location.hash='#/rep/${encodeURIComponent(r.name)}'">
+      <td><span class="dot ${hs.k}"></span><span class="rowlink">${esc(r.name)}</span></td>
+      <td><span class="band">${esc(r.segment || '—')}</span></td>
+      <td class="num">${fmtHours(hoursUntil(r.next_available_at))}</td>
       <td class="num">${num(r.avail_today) ?? '—'}</td>
       <td class="num">${num(r.avail_tomorrow) ?? '—'}</td>
       <td class="num">${within48(r) ?? '—'}</td>
       <td style="text-align:right;color:var(--muted)">${etDateTime(r.next_available_at)}</td>
-    </tr>`;
+      <td><span class="badge ${hs.k}">${hs.icon} ${hs.label}</span></td></tr>`;
   }).join('');
+
+  const repSection = rs.length ? `
+    <div class="section-title">Reps <span class="count">· ${rs.length} people · worst availability first · click a name for their history</span></div>
+    <div class="panel">
+      <div class="scroll"><table>
+        <thead><tr><th>Rep</th><th>Band</th><th class="num">Hrs to slot</th>
+          <th class="num">Today</th><th class="num">Tomorrow</th><th class="num">Within 48h</th>
+          <th style="text-align:right">Next available (ET)</th><th>Status</th></tr></thead>
+        <tbody>${repRows}</tbody>
+      </table></div>
+    </div>
+
+    <div class="section-title">By band <span class="count">· ${bands().length} bands · Salesforce role bands</span></div>
+    <div class="panel">
+      <div class="scroll"><table>
+        <thead><tr><th>Band</th><th class="num">Reps</th><th class="num">Available today</th>
+          <th class="num">Slots today</th><th class="num">Slots within 48h</th>
+          <th style="text-align:right">Earliest (ET)</th></tr></thead>
+        <tbody>${bands().map(b=>{
+          const d = daysUntil(b.best, capturedAt), hs = health(d);
+          return `<tr><td><span class="dot ${hs.k}"></span>${esc(b.segment)}</td>
+            <td class="num">${b.reps}</td>
+            <td class="num">${b.availToday}<span style="color:var(--dim)">/${b.reps}</span></td>
+            <td class="num">${b.today}</td><td class="num">${b.w48}</td>
+            <td style="text-align:right;color:var(--muted)">${etDateTime(b.best)}</td></tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>
+
+    <div class="note">
+      Tier slot counts are per pooled round-robin. Rep slot counts <strong>are</strong> additive —
+      each rep is measured on exactly one demo calendar, so a band total is real capacity across
+      distinct people, not one person's calendar counted twice.
+    </div>` : `
+    <div class="note">
+      No rep rows in the latest run. The per-rep layer appears once
+      <code>revops_calendly_next_availability_v2</code> is imported and running; until then this
+      page shows the round-robin tiers only.
+    </div>`;
 
   document.getElementById('content').innerHTML = `
     ${kpis}
-    <div class="section-title">Availability by tier <span class="count">· ${total} calendars · sorted by prospect size</span></div>
-    <div class="cards">${cards}</div>
+
+    <div class="section-title">Demo round-robins <span class="count">· ${ts.length} calendars · sorted by prospect size · click to drill in</span></div>
+    <div class="cards">${tierCards || '<div class="state-msg">No round-robin rows in the latest run.</div>'}</div>
+
+    ${repSection}
 
     <div class="panel">
       <div class="panel-head">
         <div>
           <h3>Availability trend</h3>
-          <p>Total across all tiers, per run (last 14 days)</p>
+          <p>Total across all round-robin tiers, per run (last 14 days)</p>
         </div>
         <div class="toggle" id="metric-toggle">
           <button data-m="avail_today" class="active">Slots today</button>
@@ -368,45 +511,47 @@ function render(){
           <button data-m="days_until_available">Avg days to slot</button>
         </div>
       </div>
-      <div class="chartbox"><canvas id="trendChart"></canvas></div>
+      <div class="chartbox"><canvas id="chart"></canvas></div>
     </div>
 
     <div class="panel">
       <div class="panel-head"><div><h3>All tiers — latest run</h3></div></div>
-      <div style="overflow-x:auto">
-      <table>
+      <div class="scroll"><table>
         <thead><tr>
           <th>Tier</th><th class="num">Days to slot</th><th class="num">Today</th>
-          <th class="num">Tomorrow</th><th class="num">Within 48h (Total)</th><th style="text-align:right">Next available (ET)</th>
+          <th class="num">Tomorrow</th><th class="num">Within 48h</th>
+          <th style="text-align:right">Next available (ET)</th>
         </tr></thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-      </div>
+        <tbody>${ts.map(t=>{
+          const d = daysUntil(t.next_available_at, capturedAt), hs = health(d);
+          return `<tr class="clickable" onclick="location.hash='#/tier/${encodeURIComponent(t.segment)}'">
+            <td><span class="dot ${hs.k}"></span><span class="rowlink">${esc(tidyTier(t.segment))}</span></td>
+            <td class="num">${d ?? '—'}</td>
+            <td class="num">${num(t.avail_today) ?? '—'}</td>
+            <td class="num">${num(t.avail_tomorrow) ?? '—'}</td>
+            <td class="num">${within48(t) ?? '—'}</td>
+            <td style="text-align:right;color:var(--muted)">${etDateTime(t.next_available_at)}</td></tr>`;
+        }).join('')}</tbody>
+      </table></div>
     </div>`;
 
-  document.getElementById('run-meta').innerHTML =
-    `Latest run<br><strong>${etDateTime(capturedAt)} ET</strong>`;
+  document.getElementById('run-meta').innerHTML = `Latest run<br><strong>${etDateTime(capturedAt)} ET</strong>`;
   document.getElementById('thr').textContent = THRESHOLD;
 
   document.querySelectorAll('#metric-toggle button').forEach(b=>{
     b.onclick = ()=>{
       document.querySelectorAll('#metric-toggle button').forEach(x=>x.classList.remove('active'));
-      b.classList.add('active'); trendMetric=b.dataset.m; drawTrend();
+      b.classList.add('active'); trendMetric = b.dataset.m; drawTrend();
     };
   });
   drawTrend();
 }
 
-// ── trend chart: single aggregate series (one hue) ────────────────────────────
+// Aggregate the chosen metric across tiers, per run.
 function drawTrend(){
-  const el = document.getElementById('trendChart'); if(!el) return;
-
-  // group history by run (captured_at) → aggregate the chosen metric across tiers
   const runs = {};
-  history.forEach(r=>{ (runs[r.captured_at] ??= []).push(r); });
+  tierHistory.forEach(r=>{ (runs[r.captured_at] ??= []).push(r); });
   const stamps = Object.keys(runs).sort();
-
-  const labels = stamps.map(s=>new Date(s).toLocaleString('en-US',{timeZone:'America/New_York',month:'numeric',day:'numeric',hour:'numeric',hour12:true}));
   const isAvg = trendMetric === 'days_until_available';
   const getVal = r => trendMetric === 'within48' ? within48(r) : num(r[trendMetric]);
   const data = stamps.map(s=>{
@@ -414,16 +559,182 @@ function drawTrend(){
     if(!vals.length) return null;
     return isAvg ? +(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2) : vals.reduce((a,b)=>a+b,0);
   });
-  const title = trendMetric==='avail_today' ? 'Open slots · today'
-              : trendMetric==='within48'    ? 'Open slots · within 48h'
-              : 'Avg days to next slot';
+  drawSeries(data, stamps, metricTitle(trendMetric));
+}
+function metricTitle(m){
+  return m==='avail_today' ? 'Open slots · today'
+       : m==='within48'    ? 'Open slots · within 48h'
+       : 'Avg days to next slot';
+}
 
-  if(trendChart) trendChart.destroy();
+// ── LEVEL 2 — one round-robin tier ────────────────────────────────────────────
+function renderTier(segment){
+  const row = tiers().find(t=>t.segment === segment);
+  if(!row){ location.hash = '#/'; return; }
+  setHead(tidyTier(segment), 'Pooled demo round-robin for this prospect size band.');
+  const d = daysUntil(row.next_available_at, capturedAt), hs = health(d);
+
+  const runs = tierHistory.filter(r=>r.segment===segment)
+    .sort((a,b)=>String(a.captured_at).localeCompare(String(b.captured_at)));
+  const histRows = [...runs].reverse().slice(0,28).map(r=>`<tr>
+      <td>${etDateTime(r.captured_at)}</td>
+      <td class="num">${num(r.avail_today) ?? '—'}</td>
+      <td class="num">${num(r.avail_tomorrow) ?? '—'}</td>
+      <td class="num">${num(r.avail_24h) ?? '—'}</td>
+      <td class="num">${num(r.avail_48h) ?? '—'}</td>
+      <td style="text-align:right;color:var(--muted)">${etDateTime(r.next_available_at)}</td></tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="crumbs"><a href="#/">← Overview</a><span class="sep">/</span><span>${esc(tidyTier(segment))}</span></div>
+    <div class="kpis">
+      <div class="kpi"><div class="label">Status</div><div class="value" style="font-size:1.35rem">${hs.icon} ${hs.label}</div><div class="sub">vs the ${THRESHOLD}-day threshold</div></div>
+      <div class="kpi"><div class="label">Next slot</div><div class="value" style="font-size:1.35rem">${relNext(row.next_available_at)}</div><div class="sub">${etDateTime(row.next_available_at)} ET</div></div>
+      <div class="kpi"><div class="label">Slots today</div><div class="value">${num(row.avail_today) ?? '—'}</div><div class="sub">${within48(row) ?? '—'} within 48h</div></div>
+      <div class="kpi"><div class="label">Slots after first</div><div class="value">${num(row.slots_48h_after_first) ?? '—'}</div><div class="sub">within 48h of the first slot</div></div>
+    </div>
+
+    <div class="note">
+      This is a pooled round-robin — bookings distribute across whoever Calendly has in the pool,
+      so there is no single owner to drill into. Individual reps are listed
+      <a href="#/" style="color:var(--data)">on the overview</a>.
+      Calendar: <code>${esc(row.name || '')}</code>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><h3>Open slots today</h3><p>${esc(tidyTier(segment))} · last 14 days</p></div></div>
+      <div class="chartbox"><canvas id="chart"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><h3>Run history</h3><p>Most recent 28 runs</p></div></div>
+      <div class="scroll"><table>
+        <thead><tr><th>Run (ET)</th><th class="num">Today</th><th class="num">Tomorrow</th>
+          <th class="num">Next 24h</th><th class="num">Next 48h</th>
+          <th style="text-align:right">Next available (ET)</th></tr></thead>
+        <tbody>${histRows || '<tr><td colspan="6" style="color:var(--muted)">No history yet.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+  document.getElementById('run-meta').innerHTML = `Latest run<br><strong>${etDateTime(capturedAt)} ET</strong>`;
+  drawSeries(runs.map(r=>num(r.avail_today)), runs.map(r=>r.captured_at), 'Open slots · today');
+}
+
+// ── LEVEL 3 — one rep ─────────────────────────────────────────────────────────
+async function renderRep(name){
+  const row = repLatest.find(r=>r.name === name);
+  if(!row){ location.hash = '#/'; return; }
+  setHead(name, `${row.segment || 'Unsegmented'} · one demo calendar`);
+
+  const d = daysUntil(row.next_available_at, capturedAt), hs = health(d);
+  const peers = repLatest.filter(r=>r.segment===row.segment);
+  const peerRank = [...peers]
+    .sort((a,b)=>(num(a.days_until_available) ?? 9e9)-(num(b.days_until_available) ?? 9e9))
+    .findIndex(r=>r.name===name) + 1;
+
+  document.getElementById('content').innerHTML = `
+    <div class="crumbs"><a href="#/">← Overview</a><span class="sep">/</span><span>${esc(name)}</span></div>
+    <div class="kpis">
+      <div class="kpi"><div class="label">Status</div><div class="value" style="font-size:1.35rem">${hs.icon} ${hs.label}</div><div class="sub">${fmtHours(hoursUntil(row.next_available_at))}${(hoursUntil(row.next_available_at) ?? 0) < 72 ? 'h' : ''} from now</div></div>
+      <div class="kpi"><div class="label">Next slot</div><div class="value" style="font-size:1.35rem">${relNext(row.next_available_at)}</div><div class="sub">${etDateTime(row.next_available_at)} ET</div></div>
+      <div class="kpi"><div class="label">Open slots</div><div class="value">${num(row.avail_today) ?? '—'}</div><div class="sub">today · ${within48(row) ?? '—'} within 48h</div></div>
+      <div class="kpi"><div class="label">In their band</div><div class="value" style="font-size:1.35rem">${peerRank || '—'}<span style="font-size:1rem;color:var(--dim);font-weight:600">/${peers.length}</span></div><div class="sub">${esc(row.segment || '—')} · 1 = soonest slot</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><h3>Latest run</h3><p>${esc(name)} · ${etDateTime(capturedAt)} ET</p></div></div>
+      <div class="scroll"><table>
+        <thead><tr><th>Band</th><th class="num">Days to slot</th><th class="num">Hrs to slot</th>
+          <th class="num">Today</th><th class="num">Tomorrow</th><th class="num">Next 24h</th>
+          <th class="num">Next 48h</th><th class="num">After first</th>
+          <th style="text-align:right">Next available (ET)</th></tr></thead>
+        <tbody><tr>
+          <td><span class="dot ${hs.k}"></span>${esc(row.segment || '—')}</td>
+          <td class="num">${d ?? '—'}</td>
+          <td class="num">${fmtHours(hoursUntil(row.next_available_at))}</td>
+          <td class="num">${num(row.avail_today) ?? '—'}</td>
+          <td class="num">${num(row.avail_tomorrow) ?? '—'}</td>
+          <td class="num">${num(row.avail_24h) ?? '—'}</td>
+          <td class="num">${num(row.avail_48h) ?? '—'}</td>
+          <td class="num">${num(row.slots_48h_after_first) ?? '—'}</td>
+          <td style="text-align:right;color:var(--muted)">${etDateTime(row.next_available_at)}</td>
+        </tr></tbody>
+      </table></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div><h3 id="rep-chart-title">Open slots today</h3><p>${esc(name)} · last 14 days</p></div>
+        <div class="toggle" id="rep-toggle">
+          <button data-m="avail_today" class="active">Slots today</button>
+          <button data-m="days_until_available">Days to slot</button>
+        </div>
+      </div>
+      <div class="chartbox"><canvas id="chart"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><h3>Run history</h3><p>Most recent 28 runs</p></div></div>
+      <div class="scroll"><table id="rep-hist">
+        <thead><tr><th>Run (ET)</th><th class="num">Days to slot</th><th class="num">Today</th>
+          <th class="num">Tomorrow</th><th class="num">Next 48h</th>
+          <th style="text-align:right">Next available (ET)</th></tr></thead>
+        <tbody><tr><td colspan="6" style="color:var(--muted)">Loading history…</td></tr></tbody>
+      </table></div>
+    </div>`;
+  document.getElementById('run-meta').innerHTML = `Latest run<br><strong>${etDateTime(capturedAt)} ET</strong>`;
+
+  // Rep history is fetched lazily — the detail grain is ~21 rows per run.
+  let hist = repHistCache[name];
+  if(!hist){
+    try {
+      hist = await sqlQuery(
+        `SELECT captured_at, next_available_at, days_until_available,
+                avail_today, avail_tomorrow, avail_24h, avail_48h
+           FROM capacity.rep_daily
+          WHERE source_key = $1 AND type = 'REP' AND name = $2
+            AND captured_at >= now() - interval '14 days'
+          ORDER BY captured_at`, [SOURCE_KEY, name]);
+      repHistCache[name] = hist;
+    } catch(e){ hist = []; }
+  }
+  if(location.hash.indexOf(encodeURIComponent(name)) === -1) return;   // navigated away mid-fetch
+
+  const body = document.querySelector('#rep-hist tbody');
+  if(body) body.innerHTML = [...hist].reverse().slice(0,28).map(r=>`<tr>
+      <td>${etDateTime(r.captured_at)}</td>
+      <td class="num">${daysUntil(r.next_available_at, r.captured_at) ?? '—'}</td>
+      <td class="num">${num(r.avail_today) ?? '—'}</td>
+      <td class="num">${num(r.avail_tomorrow) ?? '—'}</td>
+      <td class="num">${num(r.avail_48h) ?? '—'}</td>
+      <td style="text-align:right;color:var(--muted)">${etDateTime(r.next_available_at)}</td></tr>`).join('')
+    || '<tr><td colspan="6" style="color:var(--muted)">No history yet.</td></tr>';
+
+  const drawRep = (m)=>{
+    const title = m==='avail_today' ? 'Open slots · today' : 'Days to earliest slot';
+    const el = document.getElementById('rep-chart-title'); if(el) el.textContent = title;
+    // Historical distance stays capture-relative: a past run's gap to its earliest slot
+    // has to be measured from that run, not from today.
+    const vals = hist.map(r=> m==='avail_today' ? num(r.avail_today) : daysUntil(r.next_available_at, r.captured_at));
+    drawSeries(vals, hist.map(r=>r.captured_at), title);
+  };
+  document.querySelectorAll('#rep-toggle button').forEach(b=>{
+    b.onclick = ()=>{
+      document.querySelectorAll('#rep-toggle button').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active'); drawRep(b.dataset.m);
+    };
+  });
+  drawRep('avail_today');
+}
+
+// ── chart: always a single series, so no categorical palette and no legend ────
+function drawSeries(data, stamps, title){
+  const el = document.getElementById('chart'); if(!el) return;
+  const labels = stamps.map(s=>new Date(s).toLocaleString('en-US',{timeZone:'America/New_York',month:'numeric',day:'numeric',hour:'numeric',hour12:true}));
+  if(chart) chart.destroy();
   const ctx = el.getContext('2d');
   const grad = ctx.createLinearGradient(0,0,0,300);
   grad.addColorStop(0,'rgba(42,120,214,0.22)'); grad.addColorStop(1,'rgba(42,120,214,0.01)');
 
-  trendChart = new Chart(ctx,{
+  chart = new Chart(ctx,{
     type:'line',
     data:{ labels, datasets:[{
       label:title, data, borderColor:'#2a78d6', backgroundColor:grad,
@@ -434,9 +745,10 @@ function drawTrend(){
       responsive:true, maintainAspectRatio:false,
       interaction:{ mode:'index', intersect:false },
       plugins:{
-        legend:{ display:false },
+        legend:{ display:false },   // single series — the panel title names it
         tooltip:{
-          backgroundColor:'#0b0b0b', padding:10, cornerRadius:8, titleFont:{family:'Inter'}, bodyFont:{family:'Inter'},
+          backgroundColor:'#0b0b0b', padding:10, cornerRadius:8,
+          titleFont:{family:'Inter'}, bodyFont:{family:'Inter'},
           callbacks:{ label:c=>`${title}: ${c.parsed.y}` }
         }
       },
