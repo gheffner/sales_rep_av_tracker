@@ -1,71 +1,52 @@
 # Sales Rep Availability Tracker
 
-A drill-down dashboard for DoorLoop's **sales demo** Calendly availability — the seven
-prospect-size round-robins and every sales rep's own demo calendar. Sibling of
-`ob_calendar_av_tracker`; same deployment shape, same design tokens, same three-level
-drill-down.
+A dashboard for DoorLoop's **sales demo** Calendly availability: the seven prospect-size
+round robins (`calendly.com/doorloop/demo`, `demo-1` … `demo-6`). Sibling of
+`ob_calendar_av_tracker`; same deployment shape and design tokens.
 
-Live data is produced by the n8n workflow **`revops_calendly_next_availability_v2`**, which
-writes a snapshot into `capacity.rep_daily` with `source_key = 'sales_reps_availability'`
-every 2 hours, 8am–6pm ET, weekdays.
+## How the pieces fit
 
-## The three levels
+| Piece | What it is | Schedule (US Eastern, weekdays) |
+|---|---|---|
+| n8n **RevOps Calendly Availability Tracker** (`qtk3MkGZvOW2YsjQ`) | Reads each round robin's open slots from Calendly. Writes one tab per run to the [Google Sheet](https://docs.google.com/spreadsheets/d/1hdbSUfrP4y8hYbuCTDeR46jrIHpQlB7YASDlLQ3KSR8) (`Run_DD_Mon_YYYY_HH00`) and the same 7 rows to `capacity.rep_daily` (`source_key = 'sales_reps_availability'`, `type = 'RR'`) | every 2 hours, 8am–4pm |
+| n8n **RevOps Daily Calendly Av Threshold Alert** (`ot4pOWf1Rr2P8YEE`) | Reads that run's tab and posts to #revops-calendar-availability, linking to this page | 8:10am, 12:10pm, 4:10pm |
+| This page | Reads `capacity.rep_daily` | refreshes every 60s |
+
+All three show the same numbers for a given run. The sheet tab, the database rows and this page's
+"All segments" table carry identical values; the alert quotes the same `Available_Today` /
+`Available_Next_Business_Day` counts. The Slack post links only to this page; the sheet is linked from here (the header and the "All segments" table).
+
+| Sheet column | `rep_daily` column | Page label |
+|---|---|---|
+| `Available_Today` | `avail_today` | Today |
+| `Available_Next_Business_Day` | `avail_tomorrow` | Tomorrow (Monday on a Friday) |
+| `Available_In_The_Next_24_Hours` / `_48_Hours` | `avail_24h` / `avail_48h` | Next 24h / Next 48h |
+| `Days_Until_Next_Available_Slot_From_Run_Date` | `days_until_available` | Days to slot (US Eastern days) |
+| `Next_Available_Date` | `next_available_at` | Next slot |
+
+`avail_tomorrow` holds the **next business day**, not calendar tomorrow: on a Friday it is
+Monday's count. Rows written before 2026-10-22 hold calendar tomorrow (0 on Fridays). The column
+keeps its old name because the table belongs to the shared `capacity` schema.
+
+## Status: the same rule as the Slack alert
+
+A segment is **Low** when it has **3 or fewer** slots. Until the 4pm snapshot that means slots
+left **today**; from the 4pm snapshot on it means slots on the **next business day**, because by
+late afternoon few slots are ever left today (GTM-2773). A calendar with no slot at all in
+Calendly's 7-day horizon shows **No slots**.
+
+These are pooled round robins: Calendly spreads bookings across whoever is in each pool, so
+availability is tracked per round robin, not per rep. Several pools draw on the same reps, which
+is why the trend chart shows the tightest segment at each run rather than a total.
+
+## The two levels
 
 | Route | View | Shows |
 |---|---|---|
-| `#/` | Overview | KPI tiles · 7 round-robin tier cards · rep table · band rollup · trend chart · tier table |
+| `#/` | Overview | KPI tiles · 7 round-robin cards · trend chart · all-segments table |
 | `#/tier/{segment}` | Round-robin detail | That calendar's numbers and its last 28 runs |
-| `#/rep/{name}` | Rep detail | That rep's latest numbers, band rank, and last 28 runs |
 
 Routing is hash-based, so any drill-down state is a shareable link and the back button works.
-Cards and table rows are clickable; a `›` chevron marks anything that drills.
-
-## Two grains, one table
-
-Both grains live in `capacity.rep_daily`, separated by the `type` column:
-
-| `type` | Rows | `name` | `segment` |
-|---|---|---|---|
-| `RR` | 7 | Calendly event name (`DoorLoop Demo`) | unit band from the calendar's `internal_note` |
-| `REP` | 21 | rep's Salesforce name | their Salesforce role band (`AE 1-20`, `SDR`, …) |
-
-Rows written before the rep layer shipped are all `type = 'RR'`, so tier history and the
-14-day sparklines are continuous across the switchover. Every query on this page filters by
-`type`; adding rep rows to a query that doesn't filter would silently inflate the tier totals.
-
-## Rep slot counts are additive — unlike the onboarding tracker's
-
-The onboarding page deliberately refuses to sum a specialist's numbers, because one specialist
-owns twelve event types that all draw on a single underlying free/busy. Here each rep is
-measured on **exactly one** demo calendar, so summing across reps counts distinct people and a
-band total is real capacity. That is why this page has a band rollup and the onboarding page
-does not.
-
-## What it shows
-
-| Section | Meaning |
-|---|---|
-| KPI tiles | tiers available today, soonest slot anywhere, reps available today, tiers over the SLA |
-| Tier cards | per size band: next slot, slots today / tomorrow / within 48h, 14-day sparkline |
-| Rep table | every rep, worst availability first: band, hours to slot, today / tomorrow / 48h, status |
-| Band rollup | per Salesforce role band: reps, how many are open today, total slots, earliest slot |
-| Trend chart | one metric totalled across the round-robins, per run, last 14 days |
-| Tier table | every tier at the latest run |
-
-## The 1-day SLA
-
-Health threshold = **next bookable slot within 1 day**, unchanged from v1 and from the
-`RevOps Daily Calendly Av Threshold Alert` workflow. A calendar is green with a slot today,
-amber tomorrow, red beyond that or with no slot at all in Calendly's 7-day horizon.
-
-Note this is deliberately *not* the onboarding tracker's threshold, which is 48 hours.
-
-"Days to slot" is recomputed in the browser from `next_available_at` in **Eastern** time rather
-than read from the stored integer, which counts UTC days. The two agree for the current
-8am–6pm ET cron; deriving it here keeps the page correct if that cron ever moves. "Hrs to slot"
-is measured against **now**, not against `captured_at`, so it stays live between snapshots —
-the page re-reads every 60s. Historical series stay capture-relative: a past run's distance to
-its earliest slot has to be measured from that run, not from today.
 
 ## How the SQL proxy works
 
@@ -103,7 +84,7 @@ There is also a dependency-free render test:
 node _render_test.mjs index.html sales
 ```
 
-It stubs the DOM, Chart.js and the SQL proxy, then drives every route against synthetic rows —
+It stubs the DOM, Chart.js and the SQL proxy, then drives every route against synthetic rows, at a weekday-morning snapshot and at the Friday 4pm snapshot —
 including fully-booked calendars and unknown hashes — and fails on any exception or stray
 `undefined` in the output. It exists because the sibling onboarding dashboard shipped with an
 undefined variable inside a template literal, which threw during render and left the page stuck
@@ -117,10 +98,3 @@ palette and no legend — the panel title names the series. The status palette
 a text label, never colour alone; amber badge text uses the darkened `#9a6a00` for contrast.
 Every view pairs its chart with a table.
 
-## Status
-
-The round-robin tier views run on live data that has been flowing since February. The rep
-views are **not yet verified against real rows** — `capacity.rep_daily` carries no
-`type = 'REP'` rows until `revops_calendly_next_availability_v2` is imported and runs. Until
-then the page renders the tiers and shows an inline note where the rep sections will appear.
-All six routes have been exercised against synthetic rows via `_render_test.mjs`.
