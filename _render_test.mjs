@@ -35,16 +35,17 @@ const NOW = Date.now();
 const iso = (h) => new Date(NOW + h * 3600e3).toISOString();
 const runAt = (h) => new Date(NOW - h * 3600e3).toISOString();
 
+// [segment, today, next business day, next 24h, next 48h, days to slot, next slot]
 const TIERS = [
-  ['1-10 Units', 3, 2, 4, 9, 0, iso(2)],
+  ['1-10 Units', 6, 8, 6, 14, 0, iso(2)],
   ['11-20 Units', 0, 5, 0, 5, 1, iso(20)],
-  ['21-50', 1, 3, 1, 4, 0, iso(5)],
+  ['21-50', 5, 2, 5, 7, 0, iso(5)],
   ['51-100 Units', 0, 0, 0, 0, null, null],           // fully booked
-  ['101-150', 2, 2, 2, 4, 0, iso(3)],
+  ['101-150', 2, 9, 2, 11, 0, iso(3)],
   ['151-300', 0, 1, 0, 1, 1, iso(26)],
   ['300+', 0, 0, 0, 1, 3, iso(70)],
 ];
-const REPS = [
+const REPS = [   // onboarding specialists, for the OB dashboard only
   ['Brandon Rios', 'AE 1-20', 0, 2, 0, 2, 1, iso(19)],
   ['Liam Delaney', 'AE 1-20', 2, 1, 2, 3, 0, iso(1)],
   ['Pedro Chinait', 'AE 1-20', 0, 0, 0, 0, null, null],
@@ -57,18 +58,10 @@ const mkTier = (r, cap) => ({
   avail_48h: String(r[4]), days_until_available: r[5] === null ? null : String(r[5]),
   next_available_at: r[6], slots_48h_after_first: String(r[4]),
 });
-const mkRep = (r, cap) => ({
-  captured_at: cap, run_period: 'PM', type: 'REP', name: r[0], segment: r[1],
-  avail_today: String(r[2]), avail_tomorrow: String(r[3]), avail_24h: String(r[4]),
-  avail_48h: String(r[5]), days_until_available: r[6] === null ? null : String(r[6]),
-  next_available_at: r[7], slots_48h_after_first: String(r[5]),
-});
-const CAP = runAt(1);
-const latest = [...TIERS.map(t => mkTier(t, CAP)), ...REPS.map(r => mkRep(r, CAP))];
+let CAP = runAt(1);
+let latest = TIERS.map(t => mkTier(t, CAP));
 const history = [];
 for (const h of [1, 3, 5, 7, 9]) for (const t of TIERS) history.push(mkTier(t, runAt(h)));
-const repHistory = [];
-for (const h of [1, 3, 5, 7, 9]) for (const r of REPS) repHistory.push(mkRep(r, runAt(h)));
 
 // OB-shaped rows, for running the same test against the onboarding dashboard
 const obSeg = TIERS.map(t => ({ captured_at: CAP, run_period:'PM', type:'RR', unit_tier:t[0], event_type:'',
@@ -89,9 +82,7 @@ async function fakeFetch(url, opts){
       ? (/interval/.test(sql) ? obSeg.concat(obSeg) : obSeg)
       : (/group by/i.test(sql) ? [{captured_at:CAP, best:iso(4), slots_24h:'3'}] : obRep);
   } else {
-    rows = /max\(captured_at\)/.test(sql) ? latest
-         : /type = 'REP'/.test(sql)       ? repHistory.filter(r => sql.includes('$2') ? true : true)
-         : history;
+    rows = /max\(captured_at\)/.test(sql) ? latest : history;
   }
   return { ok: true, status: 200, json: async () => ({ ok: true, rows }), text: async () => '' };
 }
@@ -109,26 +100,47 @@ sandbox.globalThis = sandbox;
 const ctx = vm.createContext(sandbox);
 vm.runInContext(scripts[0], ctx, { filename: FILE });
 
-const routes = KIND === 'ob'
-  ? ['', '#/tier/1-10 Units', '#/rep/Brandon Rios']
-  : ['', '#/tier/1-10 Units', '#/tier/300+', '#/rep/Brandon Rios', '#/rep/Pedro Chinait', '#/nonsense/x'];
+// Sales: the same routes at a weekday-morning snapshot and at the Friday 4pm snapshot, with
+// the words each must show (morning judges today; Friday 4pm judges Monday).
+const scenarios = KIND === 'ob'
+  ? [{ label: 'now', cap: CAP, routes: ['', '#/tier/1-10 Units', '#/rep/Brandon Rios'], expect: [] }]
+  : [
+      { label: 'Thu 10am', cap: '2026-10-22T14:01:30.000Z', routes: ['', '#/tier/1-10 Units', '#/tier/300+', '#/nonsense/x'],
+        expect: ['Low today', '✅ OK', 'Tomorrow', 'No slots'] },
+      { label: 'Fri 4pm', cap: '2026-10-23T20:01:30.000Z', routes: ['', '#/tier/1-10 Units', '#/tier/300+'],
+        expect: ["Light Monday", '✅ OK', 'Monday'] },
+    ];
 
-let failures = 0;
-for (const r of routes) {
-  loc.hash = r;
-  Object.keys(written).forEach(k => delete written[k]);
-  try {
-    await vm.runInContext('route()', ctx);
-    await new Promise(res => setImmediate(res));
-    const out = written['content'] || '';
-    const bad = /undefined|NaN|\[object Object\]/.test(out);
-    if (out.length < 200 && r !== '#/nonsense/x') throw new Error('content suspiciously short: ' + out.slice(0,120));
-    console.log(`  ${bad ? 'WARN' : 'OK  '} route "${r || '#/'}" rendered ${out.length} chars${bad ? '  <-- contains undefined/NaN' : ''}`);
-    if (bad) { failures++; console.log('       ' + (out.match(/.{0,60}(undefined|NaN|\[object Object\]).{0,60}/) || [''])[0]); }
-  } catch (e) {
-    failures++;
-    console.log(`  FAIL route "${r || '#/'}": ${e.message}`);
+let failures = 0, routesRun = 0;
+for (const sc of scenarios) {
+  CAP = sc.cap;
+  latest = TIERS.map(t => mkTier(t, CAP));
+  if (KIND !== 'ob') await vm.runInContext('fetchData()', ctx);
+  console.log(`${sc.label}:`);
+  let overview = '';
+  for (const r of sc.routes) {
+    routesRun++;
+    loc.hash = r;
+    Object.keys(written).forEach(k => delete written[k]);
+    try {
+      await vm.runInContext('route()', ctx);
+      await new Promise(res => setImmediate(res));
+      const out = written['content'] || '';
+      if (r === '') overview = out;
+      const bad = /undefined|NaN|\[object Object\]/.test(out);
+      if (out.length < 200 && r !== '#/nonsense/x') throw new Error('content suspiciously short: ' + out.slice(0,120));
+      console.log(`  ${bad ? 'WARN' : 'OK  '} route "${r || '#/'}" rendered ${out.length} chars${bad ? '  <-- contains undefined/NaN' : ''}`);
+      if (bad) { failures++; console.log('       ' + (out.match(/.{0,60}(undefined|NaN|\[object Object\]).{0,60}/) || [''])[0]); }
+    } catch (e) {
+      failures++;
+      console.log(`  FAIL route "${r || '#/'}": ${e.message}`);
+    }
+  }
+  for (const word of sc.expect) {
+    const ok = overview.includes(word);
+    if (!ok) failures++;
+    console.log(`  ${ok ? 'OK  ' : 'FAIL'} overview shows "${word}"`);
   }
 }
-console.log(`\n${failures === 0 ? 'PASS' : 'FAIL'} — ${routes.length} routes, ${failures} problem(s), ${calls} SQL calls`);
+console.log(`\n${failures === 0 ? 'PASS' : 'FAIL'} — ${routesRun} routes, ${failures} problem(s), ${calls} SQL calls`);
 process.exit(failures ? 1 : 0);
